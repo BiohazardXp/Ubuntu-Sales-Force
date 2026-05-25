@@ -2,10 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* CLEAN RESET */
-* {
-  box-sizing: border-box;
-}
+* { box-sizing: border-box; }
 
 html, body, #root {
   height: 100%;
@@ -14,10 +11,9 @@ html, body, #root {
   padding: 0;
 }
 
-/* IMPORTANT: DO NOT CENTER ANYTHING */
 body {
   overflow: hidden;
   display: block;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: #f0f2f5;
 }
-
-/* REMOVE ALL GLOBAL THEME OVERRIDES */

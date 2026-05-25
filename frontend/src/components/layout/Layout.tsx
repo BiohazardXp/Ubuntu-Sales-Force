@@ -4,21 +4,15 @@ import Navbar from "./Navbar";
 
 export default function Layout() {
   return (
-    <div className="fixed inset-0 flex bg-slate-100 overflow-hidden">
-      {/* SIDEBAR */}
-      <div className="w-64 h-full flex-shrink-0">
+    <div className="fixed inset-0 flex overflow-hidden" style={{ background: "#f0f2f5" }}>
+      <div className="w-56 h-full flex-shrink-0">
         <Sidebar />
       </div>
-
-      {/* MAIN AREA */}
       <div className="flex flex-col flex-1 h-full min-w-0">
-        {/* NAVBAR (fixed height) */}
         <div className="h-14 flex-shrink-0">
           <Navbar />
         </div>
-
-        {/* CONTENT (takes remaining space ONLY) */}
-        <main className="flex-1 min-h-0 overflow-y-auto p-6 bg-slate-50">
+        <main className="flex-1 min-h-0 overflow-y-auto p-5" style={{ background: "#f0f2f5" }}>
           <Outlet />
         </main>
       </div>

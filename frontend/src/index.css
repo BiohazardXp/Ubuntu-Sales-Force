@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CLEAN RESET */
+* {
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+/* IMPORTANT: DO NOT CENTER ANYTHING */
+body {
+  overflow: hidden;
+  display: block;
+}
+
+/* REMOVE ALL GLOBAL THEME OVERRIDES */

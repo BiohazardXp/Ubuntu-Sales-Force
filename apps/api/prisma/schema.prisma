@@ -1,0 +1,227 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  COMPANY_ADMIN
+  SUPERVISOR
+  SALES_REP
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  SUSPENDED
+  TRIAL
+  EXPIRED
+}
+
+enum AttendanceStatus {
+  PRESENT
+  LATE
+  ABSENT
+}
+
+enum StopStatus {
+  PENDING
+  VISITED
+  SKIPPED
+}
+
+enum SaleStatus {
+  PENDING    // created offline, not yet synced
+  SUBMITTED  // received by server
+  APPROVED
+  REJECTED
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Company
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Company {
+  id                 String             @id @default(uuid())
+  name               String
+  slug               String             @unique
+  email              String             @unique
+  phone              String?
+  address            String?
+  isActive           Boolean            @default(true)
+  subscriptionStatus SubscriptionStatus @default(TRIAL)
+  subscriptionEndsAt DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+
+  users       User[]
+  routes      Route[]
+  attendances Attendance[]
+  sales       Sale[]
+
+  @@map("companies")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// User
+// ─────────────────────────────────────────────────────────────────────────────
+
+model User {
+  id        String   @id @default(uuid())
+  username  String   @unique
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  phone     String?
+  role      Role     @default(SALES_REP)
+  territory String?
+  isActive  Boolean  @default(true)
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  deletedAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  attendances  Attendance[]
+  routes       Route[]
+  sales        Sale[]
+  locationPings LocationPing[]
+
+  @@map("users")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Attendance
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Attendance {
+  id          String           @id @default(uuid())
+  userId      String
+  user        User             @relation(fields: [userId], references: [id])
+  companyId   String
+  company     Company          @relation(fields: [companyId], references: [id])
+
+  date        DateTime         // date only — store as start-of-day UTC
+  clockIn     DateTime?
+  clockOut    DateTime?
+  status      AttendanceStatus @default(PRESENT)
+  clockInLat  Float?
+  clockInLng  Float?
+  clockOutLat Float?
+  clockOutLng Float?
+  notes       String?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, date])    // one record per rep per day
+  @@map("attendances")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Route + Stop
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Route {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  companyId String
+  company   Company  @relation(fields: [companyId], references: [id])
+
+  date      DateTime // date of the route
+  name      String?  // optional label e.g. "Monday Lusaka CBD run"
+  notes     String?
+
+  stops     Stop[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("routes")
+}
+
+model Stop {
+  id           String     @id @default(uuid())
+  routeId      String
+  route        Route      @relation(fields: [routeId], references: [id])
+
+  customerName String
+  address      String
+  lat          Float?
+  lng          Float?
+  order        Int        // sequence order within the route
+  status       StopStatus @default(PENDING)
+  visitedAt    DateTime?
+  notes        String?
+
+  sales        Sale[]
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("stops")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sale
+// ─────────────────────────────────────────────────────────────────────────────
+
+model Sale {
+  id          String     @id @default(uuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id])
+  companyId   String
+  company     Company    @relation(fields: [companyId], references: [id])
+  stopId      String?
+  stop        Stop?      @relation(fields: [stopId], references: [id])
+
+  product     String
+  quantity    Int
+  unitPrice   Float
+  total       Float
+
+  lat         Float?
+  lng         Float?
+  status      SaleStatus @default(SUBMITTED)
+  notes       String?
+  receiptUrl  String?    // uploaded photo
+
+  // Offline sync support
+  localId     String?    // client-generated ID for dedup on sync
+  syncedAt    DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("sales")
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LocationPing
+// ─────────────────────────────────────────────────────────────────────────────
+
+model LocationPing {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+
+  lat       Float
+  lng       Float
+  accuracy  Float?   // GPS accuracy in metres
+  battery   Float?   // battery % at time of ping
+  timestamp DateTime @default(now())
+
+  @@map("location_pings")
+}

@@ -19,7 +19,7 @@ async function bootstrap() {
 
   // Allow the frontend dev server to talk to the API
   app.enableCors({
-    origin: ['http://localhost:5173', 'http://localhost:3001'],
+    origin: true, // allow all origins in development
     credentials: true,
   });
 

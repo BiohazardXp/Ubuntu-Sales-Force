@@ -23,7 +23,7 @@ export class RoutesController {
 
   // GET /api/v1/routes/my/today — rep's own route today
   @Get('my/today')
-  @Roles(Role.SALES_REP, Role.SUPERVISOR)
+  @Roles(Role.SALES_REP, Role.SUPERVISOR, Role.COMPANY_ADMIN, Role.SUPER_ADMIN)
   getMyToday(@CurrentUser() user: RequestUser) {
     return this.svc.getMyToday(user);
   }

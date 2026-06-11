@@ -14,7 +14,6 @@ export class SalesService {
   async create(dto: CreateSaleDto, requester: RequestUser) {
     const total = dto.quantity * dto.unitPrice;
 
-    // Dedup: if a localId was provided and already exists, return existing
     if (dto.localId) {
       const existing = await this.prisma.sale.findFirst({
         where: { localId: dto.localId, userId: requester.id },
@@ -41,7 +40,7 @@ export class SalesService {
     });
   }
 
-  // ── Bulk sync (offline sales submitted together) ──────────────────────────
+  // ── Bulk sync ─────────────────────────────────────────────────────────────
 
   async sync(dto: SyncSalesDto, requester: RequestUser) {
     const results = await Promise.all(
@@ -58,22 +57,20 @@ export class SalesService {
       where:   { userId: requester.id, createdAt: { gte: start, lte: end } },
       orderBy: { createdAt: 'desc' },
     });
-    const total = sales.reduce((s, r) => s + r.total, 0);
-    return { sales, total, count: sales.length };
+    return { sales, total: sales.reduce((s,r) => s + r.total, 0), count: sales.length };
   }
 
-  // ── Company sales today (managers) ────────────────────────────────────────
+  // ── Company sales today ───────────────────────────────────────────────────
 
   async getCompanyToday(requester: RequestUser) {
     const { start, end } = this.todayRange();
-    const companyId = requester.role === Role.SUPER_ADMIN
-      ? undefined : requester.companyId!;
+
+    // SUPER_ADMIN has no companyId — don't filter by it
+    const where: any = { createdAt: { gte: start, lte: end } };
+    if (requester.companyId) where.companyId = requester.companyId;
 
     const sales = await this.prisma.sale.findMany({
-      where: {
-        ...(companyId ? { companyId } : {}),
-        createdAt: { gte: start, lte: end },
-      },
+      where,
       include: {
         user: { select: { id: true, firstName: true, lastName: true } },
         stop: { select: { customerName: true, address: true } },
@@ -81,24 +78,26 @@ export class SalesService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const total = sales.reduce((s, r) => s + r.total, 0);
-    return { sales, total, count: sales.length };
+    return { sales, total: sales.reduce((s,r) => s + r.total, 0), count: sales.length };
   }
 
-  // ── Sales summary by rep for company today ────────────────────────────────
+  // ── Summary by rep ────────────────────────────────────────────────────────
 
   async getSummaryByRep(requester: RequestUser) {
     const { start, end } = this.todayRange();
 
+    // SUPER_ADMIN has no companyId — don't filter by it
+    const where: any = { createdAt: { gte: start, lte: end } };
+    if (requester.companyId) where.companyId = requester.companyId;
+
     const grouped = await this.prisma.sale.groupBy({
       by:      ['userId'],
-      where:   { companyId: requester.companyId!, createdAt: { gte: start, lte: end } },
+      where,
       _sum:    { total: true },
       _count:  { id: true },
       orderBy: { _sum: { total: 'desc' } },
     });
 
-    // Hydrate with user names
     const userIds = grouped.map(g => g.userId);
     const users   = await this.prisma.user.findMany({
       where:  { id: { in: userIds } },

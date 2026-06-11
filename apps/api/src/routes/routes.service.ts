@@ -9,12 +9,11 @@ import type { RequestUser } from '../auth/guards/roles.guard';
 export class RoutesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // ── Create route with stops (COMPANY_ADMIN / SUPERVISOR) ─────────────────
+  // ── Create route with stops ───────────────────────────────────────────────
 
   async create(dto: CreateRouteDto, requester: RequestUser) {
     const companyId = requester.companyId!;
 
-    // Verify the assigned rep belongs to the same company
     const rep = await this.prisma.user.findFirst({
       where: { id: dto.userId, companyId, deletedAt: null },
     });
@@ -42,44 +41,48 @@ export class RoutesService {
     });
   }
 
-  // ── Get today's route for the logged-in rep ───────────────────────────────
+  // ── Today's route for the logged-in user ──────────────────────────────────
 
   async getMyToday(requester: RequestUser) {
-    const startOfDay = this.startOfDay(new Date());
-    const endOfDay   = this.endOfDay(new Date());
+    const { start, end } = this.todayRange();
+
+    // Build where clause — only filter companyId when it's set
+    const where: any = {
+      userId: requester.id,
+      date:   { gte: start, lte: end },
+    };
+    if (requester.companyId) where.companyId = requester.companyId;
 
     return this.prisma.route.findFirst({
-      where: {
-        userId:    requester.id,
-        companyId: requester.companyId!,
-        date:      { gte: startOfDay, lte: endOfDay },
-      },
+      where,
       include: { stops: { orderBy: { order: 'asc' } } },
     });
   }
 
-  // ── Get all routes for a rep (managers) ──────────────────────────────────
+  // ── All routes for a specific rep ─────────────────────────────────────────
 
   async getForRep(userId: string, requester: RequestUser) {
+    const where: any = { userId };
+    if (requester.companyId) where.companyId = requester.companyId;
+
     return this.prisma.route.findMany({
-      where:   { userId, companyId: requester.companyId ?? undefined },
+      where,
       include: { stops: { orderBy: { order: 'asc' } } },
       orderBy: { date: 'desc' },
       take:    30,
     });
   }
 
-  // ── Get all routes for company today (managers) ───────────────────────────
+  // ── All routes for company today ──────────────────────────────────────────
 
   async getCompanyToday(requester: RequestUser) {
-    const startOfDay = this.startOfDay(new Date());
-    const endOfDay   = this.endOfDay(new Date());
+    const { start, end } = this.todayRange();
+
+    const where: any = { date: { gte: start, lte: end } };
+    if (requester.companyId) where.companyId = requester.companyId;
 
     return this.prisma.route.findMany({
-      where: {
-        companyId: requester.companyId!,
-        date:      { gte: startOfDay, lte: endOfDay },
-      },
+      where,
       include: {
         user:  { select: { id: true, firstName: true, lastName: true, territory: true } },
         stops: { orderBy: { order: 'asc' } },
@@ -88,7 +91,7 @@ export class RoutesService {
     });
   }
 
-  // ── Update a stop status (rep marks visited / skipped) ───────────────────
+  // ── Update stop status ────────────────────────────────────────────────────
 
   async updateStop(stopId: string, dto: UpdateStopDto, requester: RequestUser) {
     const stop = await this.prisma.stop.findUnique({
@@ -97,7 +100,6 @@ export class RoutesService {
     });
     if (!stop) throw new NotFoundException('Stop not found.');
 
-    // Rep can only update stops on their own routes
     if (requester.role === Role.SALES_REP && stop.route.userId !== requester.id) {
       throw new ForbiddenException('This stop is not on your route.');
     }
@@ -116,10 +118,9 @@ export class RoutesService {
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
-  private startOfDay(d: Date): Date {
-    const s = new Date(d); s.setUTCHours(0,0,0,0); return s;
-  }
-  private endOfDay(d: Date): Date {
-    const e = new Date(d); e.setUTCHours(23,59,59,999); return e;
+  private todayRange() {
+    const start = new Date(); start.setUTCHours(0,0,0,0);
+    const end   = new Date(); end.setUTCHours(23,59,59,999);
+    return { start, end };
   }
 }

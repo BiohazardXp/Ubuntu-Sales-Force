@@ -33,6 +33,7 @@ export interface AuthUser {
   phone:     string | null;
   role:      UserRole;
   territory: string | null;
+  companyId: string | null;
   isActive:  boolean;
   createdAt: string;
   updatedAt: string;
@@ -43,8 +44,51 @@ export interface LoginResponse {
   user:        AuthUser;
 }
 
+// Route / Stop types
+export type StopStatus = 'PENDING' | 'VISITED' | 'SKIPPED';
+
+export interface Stop {
+  id:           string;
+  customerName: string;
+  address:      string;
+  lat:          number | null;
+  lng:          number | null;
+  order:        number;
+  status:       StopStatus;
+  visitedAt:    string | null;
+  notes:        string | null;
+}
+
+export interface Route {
+  id:    string;
+  date:  string;
+  name:  string | null;
+  notes: string | null;
+  stops: Stop[];
+}
+
+// Sale types
+export interface Sale {
+  id:        string;
+  product:   string;
+  quantity:  number;
+  unitPrice: number;
+  total:     number;
+  notes:     string | null;
+  createdAt: string;
+}
+
+// Attendance types
+export interface Attendance {
+  id:        string;
+  date:      string;
+  clockIn:   string | null;
+  clockOut:  string | null;
+  status:    'PRESENT' | 'LATE' | 'ABSENT';
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Axios instance
+// Axios instance — NestJS API
 // ─────────────────────────────────────────────────────────────────────────────
 
 const api: AxiosInstance = axios.create({
@@ -52,7 +96,7 @@ const api: AxiosInstance = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT on every outgoing request
+// Attach JWT on every request
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = tokenHelpers.get();
@@ -62,7 +106,7 @@ api.interceptors.request.use(
   (error: AxiosError) => Promise.reject(error),
 );
 
-// On 401 → clear storage and redirect to login
+// On 401 — clear and redirect to login
 api.interceptors.response.use(
   (response: AxiosResponse) => response,
   (error: AxiosError) => {
@@ -75,26 +119,19 @@ api.interceptors.response.use(
 );
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Auth endpoints
+// Auth
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const authApi = {
-  login: async (username: string, password: string): Promise<LoginResponse> => {
-    const res = await api.post<LoginResponse>('/auth/login', { username, password });
-    return res.data;
-  },
-  me: async (): Promise<AuthUser> => {
-    const res = await api.get<AuthUser>('/auth/me');
-    return res.data;
-  },
-  logout: () => {
-    tokenHelpers.clearAll();
-    window.location.href = '/';
-  },
+  login: async (username: string, password: string): Promise<LoginResponse> =>
+    (await api.post<LoginResponse>('/auth/login', { username, password })).data,
+  me: async (): Promise<AuthUser> =>
+    (await api.get<AuthUser>('/auth/me')).data,
+  logout: () => { tokenHelpers.clearAll(); window.location.href = '/'; },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Users endpoints
+// Users
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CreateUserPayload {
@@ -105,23 +142,123 @@ export interface CreateUserPayload {
 export interface UpdateUserPayload extends Partial<CreateUserPayload> { isActive?: boolean; }
 
 export const usersApi = {
-  getAll:  async ():                             Promise<AuthUser[]>          => (await api.get<AuthUser[]>('/users')).data,
-  getOne:  async (id: string):                   Promise<AuthUser>            => (await api.get<AuthUser>(`/users/${id}`)).data,
-  create:  async (d: CreateUserPayload):         Promise<AuthUser>            => (await api.post<AuthUser>('/users', d)).data,
-  update:  async (id: string, d: UpdateUserPayload): Promise<AuthUser>        => (await api.patch<AuthUser>(`/users/${id}`, d)).data,
-  remove:  async (id: string):                   Promise<{ message: string }> => (await api.delete<{ message: string }>(`/users/${id}`)).data,
+  getAll:  async ():                              Promise<AuthUser[]>          => (await api.get('/users')).data,
+  getOne:  async (id: string):                    Promise<AuthUser>            => (await api.get(`/users/${id}`)).data,
+  create:  async (d: CreateUserPayload):          Promise<AuthUser>            => (await api.post('/users', d)).data,
+  update:  async (id: string, d: UpdateUserPayload): Promise<AuthUser>         => (await api.patch(`/users/${id}`, d)).data,
+  remove:  async (id: string):                    Promise<{ message: string }> => (await api.delete(`/users/${id}`)).data,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Legacy helpers (RoutesPage / Visit still use these)
+// Routes
 // ─────────────────────────────────────────────────────────────────────────────
 
-const legacy = axios.create({ baseURL: 'http://localhost:3000' });
+export interface CreateRoutePayload {
+  userId: string;
+  date:   string;
+  name?:  string;
+  notes?: string;
+  stops:  {
+    customerName: string;
+    address:      string;
+    order:        number;
+    lat?:         number;
+    lng?:         number;
+    notes?:       string;
+  }[];
+}
 
-export const getRoutes    = async (userId: number)                                                          => (await legacy.get(`/routes/${userId}`)).data;
-export const getRouteStop = async (userId: number, stopId: number)                                          => (await legacy.get(`/route/${userId}/${stopId}`)).data;
-export const checkInVisit = async (userId: number, stopId: number)                                          => (await legacy.post(`/visit/checkin`, { userId, stopId })).data;
-export const addSale      = async (userId: number, stopId: number, d: { product: string; quantity: number; price: number }) => (await legacy.post('/sales/add', { userId, stopId, ...d })).data;
-export const getAnalytics = async (userId: number)                                                          => (await legacy.get(`/analytics/${userId}`)).data;
+export const routesApi = {
+  // POST create a route + stops for a rep
+  create: async (d: CreateRoutePayload): Promise<Route> =>
+    (await api.post<Route>('/routes', d)).data,
+
+  // GET today's route for the logged-in rep
+  myToday: async (): Promise<Route | null> =>
+    (await api.get<Route | null>('/routes/my/today')).data,
+
+  // GET all routes today for the whole company (managers)
+  companyToday: async (): Promise<Route[]> =>
+    (await api.get<Route[]>('/routes/company/today')).data,
+
+  // GET route history for a specific rep
+  forRep: async (userId: string): Promise<Route[]> =>
+    (await api.get<Route[]>(`/routes/rep/${userId}`)).data,
+
+  // PATCH mark a stop as visited / skipped
+  updateStop: async (
+    stopId: string,
+    data: { status: StopStatus; lat?: number; lng?: number; notes?: string },
+  ): Promise<Stop> =>
+    (await api.patch<Stop>(`/routes/stops/${stopId}`, data)).data,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sales
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface CreateSalePayload {
+  product:    string;
+  quantity:   number;
+  unitPrice:  number;
+  stopId?:    string;
+  lat?:       number;
+  lng?:       number;
+  notes?:     string;
+  localId?:   string;
+}
+
+export const salesApi = {
+  create: async (d: CreateSalePayload): Promise<Sale> =>
+    (await api.post<Sale>('/sales', d)).data,
+
+  myToday: async (): Promise<{ sales: Sale[]; total: number; count: number }> =>
+    (await api.get('/sales/my/today')).data,
+
+  companyToday: async (): Promise<{ sales: Sale[]; total: number; count: number }> =>
+    (await api.get('/sales/company/today')).data,
+
+  summaryByRep: async (): Promise<{ userId: string; name: string; total: number; saleCount: number }[]> =>
+    (await api.get('/sales/summary/reps')).data,
+
+  sync: async (sales: CreateSalePayload[]): Promise<{ synced: number; sales: Sale[] }> =>
+    (await api.post('/sales/sync', { sales })).data,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Attendance
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const attendanceApi = {
+  clockIn: async (data?: { lat?: number; lng?: number; notes?: string }): Promise<Attendance> =>
+    (await api.post<Attendance>('/attendance/clock-in', data ?? {})).data,
+
+  clockOut: async (data?: { lat?: number; lng?: number; notes?: string }): Promise<Attendance> =>
+    (await api.post<Attendance>('/attendance/clock-out', data ?? {})).data,
+
+  today: async (): Promise<Attendance | null> =>
+    (await api.get<Attendance | null>('/attendance/today')).data,
+
+  companyToday: async (): Promise<Attendance[]> =>
+    (await api.get<Attendance[]>('/attendance/company/today')).data,
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Location
+// ─────────────────────────────────────────────────────────────────────────────
+
+export const locationApi = {
+  ping: async (data: { lat: number; lng: number; accuracy?: number; battery?: number }) =>
+    (await api.post('/location/ping', data)).data,
+
+  bulkPing: async (pings: { lat: number; lng: number; accuracy?: number; battery?: number }[]) =>
+    (await api.post('/location/ping/bulk', { pings })).data,
+
+  companyLatest: async () =>
+    (await api.get('/location/company/latest')).data,
+
+  repTrail: async (userId: string) =>
+    (await api.get(`/location/rep/${userId}/trail`)).data,
+};
 
 export default api;
